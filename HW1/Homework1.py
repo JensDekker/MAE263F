@@ -95,10 +95,6 @@ for i in range(len(free_nodes)):
     free_DOF[2 * i] = 2 * free_nodes[i]
     free_DOF[2 * i + 1] = 2 * free_nodes[i] + 1
 
-# Container to store the y-coordinate of the middle node
-y_middle = np.zeros(len(t))
-y_middle[0] = x_old[3] # y-coordinate of the second node
-
 # Container to store the y-coordinate of the free nodes
 y_free = np.zeros((len(free_nodes), len(t)))
 for i in range(len(free_nodes)):
@@ -114,8 +110,6 @@ for k in range(len(t) - 1):
     
     if t_new in [0, 0.1, 1.0, 10.0, 100.0]:
         ploot.plot(x_new, index_matrix, t_new, save_plots=True, output_dir='HW1/plots')
-    y_middle[k+1] = x_new[3]
-
     # Update the y-coordinate of the free nodes
     for i in range(len(free_nodes)):
         y_free[i,k+1] = x_new[2 * free_nodes[i] + 1]
@@ -123,13 +117,6 @@ for k in range(len(t) - 1):
     # Update x_old and u_old
     x_old = x_new
     u_old = u_new
-
-# Plot y_middle
-plt.figure()
-plt.plot(t, y_middle, 'ro-')
-plt.xlabel('Time [Second]')
-plt.ylabel('Y-Coordinate of the Second Node [Meter]')
-plt.show()
 
 # Plot y_free, with different colors for each free node
 plt.figure()
