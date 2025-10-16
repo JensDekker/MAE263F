@@ -1,5 +1,7 @@
 import numpy as np
+import os
 import solverNewtonRaphson as snr
+import solverExplicit as se
 import plot as ploot
 import matplotlib.pyplot as plt
 
@@ -82,7 +84,7 @@ for i in range(stiffness_matrix.shape[0]):
 m = np.ones(ndof)
 m *= 1 # Every point has 1 kg of mass
 
-dt = 0.1 # time step size
+dt = 1e-1 # time step size
 maxTime = 100 # total time of simulation in seconds
 t = np.arange(0, maxTime + dt, dt) # time array
 
@@ -104,6 +106,8 @@ for k in range(len(t) - 1):
     t_new = t[k+1] # Time
     
     # Call integrator
+    # x_new, u_new = se.solverExplicit(x_old, u_old, stiffness_matrix, index_matrix, m, dt, l_k)
+
     x_new, u_new = snr.solverNewtonRaphson(t_new, x_old, u_old, free_DOF, 
                                            stiffness_matrix, index_matrix,
                                            m, dt, l_k)
@@ -120,9 +124,18 @@ for k in range(len(t) - 1):
 
 # Plot y_free, with different colors for each free node
 plt.figure()
-for i in range(len(free_nodes)):
-    plt.plot(t, y_free[i,:], f'bo-')
+plt.plot(t, y_free[0,:], f'ro-')
+plt.plot(t, y_free[1,:], f'bo-')
+plt.title('Y-Coordinate of the Free Nodes vs Time')
 plt.xlabel('Time [Second]')
 plt.ylabel('Y-Coordinate of the Free Nodes [Meter]')
-plt.show()
+plt.xlim(0, 20)
+plt.legend(['Node 1', 'Node 3'])
+
+if not os.path.exists('plots'):
+    os.makedirs('plots')
+
+filename = "HW1/plots/plot_y_free.png"
+plt.savefig(filename, dpi=300, bbox_inches='tight')
+print(f'Plot saved to: {filename}')
 

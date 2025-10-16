@@ -22,7 +22,7 @@ def solverExplicit(x_old, u_old, stiffness_matrix, index_matrix, m, dt, l_k):
     # External Forces
     f_ext = gef.getExternalForce(m)
 
-    f = f_spring - f_ext
+    f = -(f_spring - f_ext)
 
     x_new = x_old + dt * u_old + 0.5 * np.linalg.solve(np.diag(m), f) * dt**2 
     u_new = (x_new - x_old) / dt
