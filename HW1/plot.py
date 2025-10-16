@@ -25,4 +25,4 @@ def plot(x, index_matrix, t, save_plots=True, output_dir='plots'):
         plt.savefig(filename, dpi=300, bbox_inches='tight')
         print(f'Plot saved to: {filename}')
     
-    plt.show()
+    # plt.show()
