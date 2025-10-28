@@ -41,9 +41,10 @@ def initSpringNetwork(N, L, EA, EI, m):
 
 N = 50
 L = 1.0 # meters
-E = 70e9 # Aluminum in Pascals
+E = 70e9 # Aluminum in Pascals (e9 for easy conversion from GPa to Pa)
+print(f'Debug - E: {E}')
 rho = 2700 # Aluminum density in kg/m^3
-
+ 
 r_outer = 0.013 # meters
 r_inner = 0.011 # meters
 
@@ -52,12 +53,14 @@ A = np.pi * (r_outer**2 - r_inner**2) # meters^2
 
 # Bending stiffness
 I = np.pi * (r_outer**4 - r_inner**4) / 4 # meters^4
+print(f'Debug - I: {I}')
 
 # Stretching stiffness
 EA = E * A
 
 # Bending stiffness
 EI = E * I
+print(f'Debug - EI: {EI}')
 
 # Total Beam Mass
 m = rho * L * A

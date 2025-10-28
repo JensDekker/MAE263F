@@ -131,7 +131,7 @@ for i in range(bending_stiffness_matrix.shape[0]):
     yk = x_old[ind[5]]
     edge1 = np.sqrt( (xj - xi) ** 2 + (yj - yi) ** 2 )
     edge2 = np.sqrt( (xk - xj) ** 2 + (yk - yj) ** 2 )
-    l_k_bending[i] = edge1 + edge2 / 2
+    l_k_bending[i] = (edge1 + edge2) / 2
 
 
 dt = 1e-2 # time step size
@@ -148,11 +148,12 @@ free_DOF = np.setdiff1d(free_DOF, fixed_DOF)
 # Multiple applied forces
 # applied_forces = np.array([10, 20, 50, 70, 100, 200, 500, 700, 1000, 2000, 5000, 7000, 10000, 20000, 50000, 70000, 100000, 200000, 500000, 700000, 1000000])  # N
 applied_forces = np.arange(500, 20500, 500)  # N
+# applied_forces = np.array([2000])  # N
 expected_deflections = np.zeros_like(applied_forces, dtype=float)
 simulated_deflections = np.zeros_like(applied_forces, dtype=float)
 
 # Expected deflection calculation setup
-beam_length = 1 - l_k_stretch[0]  # meter
+beam_length = 1 # meter
 
 # Find where the force will be applied (only need to do once)
 closest_node_idx = np.argmin(np.abs(node_matrix[:, 0] - 0.75))
@@ -160,6 +161,9 @@ applied_force_location = beam_length - node_matrix[closest_node_idx][0]
 print(f'The applied force location is: {applied_force_location}')
 
 print("Starting to solve for multiple loads...\n")
+
+# Create a container to store the max deflection for each time step at a specific applied force
+max_deflection = np.zeros(len(t))
 
 # Loop over different applied forces
 for force_idx, applied_force in enumerate(applied_forces):
@@ -169,7 +173,7 @@ for force_idx, applied_force in enumerate(applied_forces):
     W, _ = gef.getExternalForce(node_matrix, applied_force)
     
     # Calculate expected deflection for this load
-    expected_deflection = - applied_force * applied_force_location / ( 9 * np.sqrt(3) * beam_length * bending_stiffness_matrix[0] ) * (beam_length ** 2 - applied_force_location ** 2) ** 1.5
+    expected_deflection = - applied_force * applied_force_location / ( 9 * 3 ** 0.5 * beam_length * bending_stiffness_matrix[0] ) * (beam_length ** 2 - applied_force_location ** 2) ** 1.5
     expected_deflections[force_idx] = expected_deflection
     
     # Reset initial conditions for this load
@@ -179,6 +183,7 @@ for force_idx, applied_force in enumerate(applied_forces):
         x_old[2 * i] = node_matrix[i][0]
         x_old[2 * i + 1] = node_matrix[i][1]
     
+
     # Run simulation
     for k in range(len(t) - 1):
         t_new = t[k+1]
@@ -192,22 +197,25 @@ for force_idx, applied_force in enumerate(applied_forces):
         # Plot at specific time steps
         # To plot for ALL forces, change "force_idx == 0" to "True"
         # To plot only for the FIRST force, keep "force_idx == 0"
-        if force_idx == 0 and t_new in [0.25, 0.5, 0.75, 1.0]:
-            expected_max_deflection_location = np.sqrt((beam_length ** 2 - applied_force_location ** 2) / 3)
-            ploot.plot(x_new, stretch_index_matrix, t_new, save_plots=True, output_dir='HW2/plots', 
-                       expected_deflection=expected_deflection, 
-                       expected_max_deflection_location=expected_max_deflection_location,
-                       applied_force=applied_force)
+        if applied_force == 2000:
+
+            # Store the max deflection for this time step
+            max_deflection[k+1] = np.min(x_new[free_DOF[1::2]])
+
+            if t_new in [0.25, 0.5, 0.75, 1.0]:
+                expected_max_deflection_location = np.sqrt((beam_length ** 2 - applied_force_location ** 2) / 3)
+                ploot.plot(x_new, stretch_index_matrix, t_new, save_plots=True, output_dir='HW2/plots', 
+                           expected_deflection=expected_deflection, 
+                           expected_max_deflection_location=expected_max_deflection_location,
+                           applied_force=applied_force)
+                       
         
         # Update x_old and u_old
         x_old = x_new
         u_old = u_new
     
     # Store the final simulated deflection (minimum y-coordinate)
-    print(f'  Debug - x_old[free_DOF[1::2]]: {x_old[free_DOF[1::2]]}')
-    print(f'  Debug - np.min(x_old[free_DOF[1::2]]): {np.min(x_old[free_DOF[1::2]])}')
     simulated_deflections[force_idx] = np.min(x_old[free_DOF[1::2]])
-    print(f'  Debug - simulated_deflections: {simulated_deflections}')
     print(f'  Expected deflection: {expected_deflection:.6f} m')
     print(f'  Simulated deflection: {simulated_deflections[force_idx]:.6f} m\n')
 
@@ -234,21 +242,38 @@ print(f'Comparison plot saved to: {filename}')
 print("\nResults Summary:")
 print("Force [N]\tExpected [m]\tSimulated [m]\tError [%]")
 print("-" * 60)
+
 # The percentage error is calculated as the absolute difference between the expected and simulated deflections divided by the absolute value of the expected deflection, multiplied by 100.
 percentage_error = abs(expected_deflections - simulated_deflections) / abs(expected_deflections) * 100
-
 
 for i in range(len(applied_forces)):
     print(f"{applied_forces[i]:.0f}\t\t{expected_deflections[i]:.6f}\t{simulated_deflections[i]:.6f}\t{percentage_error[i]:.2f}")
 
 # Plot percentage error vs applied force
+coefficients = np.polyfit(applied_forces, percentage_error, 1)
+polynomial = np.poly1d(coefficients)
+
 plt.figure(figsize=(10, 6))
 plt.plot(applied_forces, percentage_error, 'ro-', label='Percentage Error', linewidth=2, markersize=8)
+# Plot the linear fit with the equation of the line in the label
+plt.plot(applied_forces, polynomial(applied_forces), 'b-', label=f'Linear Fit: y ={coefficients[0]:.6f}x + {coefficients[1]:.6f}', linewidth=2)
 plt.title('Percentage Error vs Applied Force')
-plt.xscale('log')
 plt.xlabel('Applied Force [N]')
 plt.ylabel('Percentage Error [%]')
 plt.legend()
 plt.xlim(min(applied_forces) - 200, max(applied_forces) + 200)
 plt.savefig('HW2/plots/plot_percentage_error.png', dpi=300, bbox_inches='tight')
-print(f'Percentage error plot saved to: {filename}')
+print(f'Percentage error plot saved to: HW2/plots/plot_percentage_error.png')
+
+# Plot max deflection vs time
+plt.figure(figsize=(10, 6))
+plt.plot(t, max_deflection, 'ro-', label='Max Deflection', linewidth=2, markersize=8)
+plt.title('Max Deflection vs Time')
+plt.xlabel('Time [s]')
+plt.ylabel('Max Deflection [m]')
+plt.legend()
+plt.savefig('HW2/plots/plot_max_deflection.png', dpi=300, bbox_inches='tight')
+print(f'Max deflection plot saved to: HW2/plots/plot_max_deflection.png')
+
+# Create a plot of max deflection location vs applied force
+plt.figure(figsize=(10, 6))
