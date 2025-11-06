@@ -1,16 +1,15 @@
-from typing import Any
 import numpy as np
 import os
 import solverNewtonRaphson as snr
-import solverExplicit as se
 import plot as ploot
 import matplotlib.pyplot as plt
 import getExternalForce as gef
+import targetNodePosition as tnp
 
-nodes_filepath = 'HW2/springNetworkData/nodes.txt'
-stretch_springs_filepath = 'HW2/springNetworkData/stretch_springs.txt'
-bending_springs_filepath = "HW2/springNetworkData/bending_springs.txt"
-
+nodes_filepath = 'HW3/springNetworkData/nodes.txt'
+stretch_springs_filepath = 'HW3/springNetworkData/stretch_springs.txt'
+bending_springs_filepath = "HW3/springNetworkData/bending_springs.txt"
+plot_filepath = 'HW3/plots'
 
 # Read the nodes file
 node_coordinates = []
@@ -32,10 +31,10 @@ with open(nodes_filepath, 'r') as f:
 
 node_matrix = np.array(node_coordinates)
 m = np.array(m_lst)
+# beam length is the distance between the first and last node
+beam_length = np.sqrt((node_matrix[0][0] - node_matrix[-1][0]) ** 2 + (node_matrix[0][1] - node_matrix[-1][1]) ** 2)
 
 print("Nodes successfully loaded.")
-print(node_matrix)
-
 
 # Read the stretching springs file
 index_info = []
@@ -61,8 +60,6 @@ stretch_index_matrix = np.array(index_info)
 stretch_stiffness_matrix = np.array(stiffness_info)
 
 print("Springs successfully loaded.")
-print(stretch_index_matrix)
-print(stretch_stiffness_matrix)
 
 # Read the bending springs file
 index_info = []
@@ -90,12 +87,13 @@ bending_index_matrix = np.array(index_info)
 bending_stiffness_matrix = np.array(stiffness_info)
 
 print("Bending springs successfully loaded.")
-print(bending_index_matrix)
-print(bending_stiffness_matrix)
-
 
 N = node_matrix.shape[0] # number of nodes
 ndof = 2 * N # number of degrees of freedom
+
+# Error check that the number of nodes is odd
+if N % 2 == 0:
+    raise ValueError("The number of nodes must be odd")
 
 # Initialize positions and velocities 
 x_old = np.zeros(ndof)
@@ -107,7 +105,7 @@ for i in range(N):
     x_old[2 * i + 1] = node_matrix[i][1] # y-coordinate
 
 # Save the initial configuration
-ploot.plot(x_old, stretch_index_matrix, 0, save_plots=True, output_dir='HW1/plots')
+ploot.plot(x_old, stretch_index_matrix, 0, save_plots=True, output_dir=plot_filepath)
  
 # Every spring has a rest length
 l_k_stretch = np.zeros_like(stretch_stiffness_matrix)
@@ -133,60 +131,106 @@ for i in range(bending_stiffness_matrix.shape[0]):
     edge2 = np.sqrt( (xk - xj) ** 2 + (yk - yj) ** 2 )
     l_k_bending[i] = (edge1 + edge2) / 2
 
-
-dt = 1e-2 # time step size
-maxTime = 1 # total time of simulation in seconds
+dt = 1 # time step size
+maxTime = 1000 # total time of simulation in seconds
 t = np.arange(0, maxTime + dt, dt) # time array
 
+# Node of Interest: Middle Node
+noi_idx = (N - 1) // 2
+noi_x = x_old[2 * noi_idx]
+noi_y = x_old[2 * noi_idx + 1]
 
 # Free DOFs
 # Define the free DOFs by the list of fixed DOFs
-fixed_DOF = np.array([0,1,ndof-1]) # Restricts the 1st node's x and y coordinates, and the last node's y coordinate
+# First DOF, and last 2 Nodes are fixed
+fixed_DOF = np.array([0,1,ndof-4,ndof-3,ndof-2,ndof-1])
 free_DOF = np.arange(ndof)
 free_DOF = np.setdiff1d(free_DOF, fixed_DOF)
 
-# Multiple applied forces
-# applied_forces = np.array([10, 20, 50, 70, 100, 200, 500, 700, 1000, 2000, 5000, 7000, 10000, 20000, 50000, 70000, 100000, 200000, 500000, 700000, 1000000])  # N
-applied_forces = np.arange(500, 20500, 500)  # N
-# applied_forces = np.array([2000])  # N
-expected_deflections = np.zeros_like(applied_forces, dtype=float)
-simulated_deflections = np.zeros_like(applied_forces, dtype=float)
 
-# Expected deflection calculation setup
-beam_length = 1 # meter
-
-# Find where the force will be applied (only need to do once)
-closest_node_idx = np.argmin(np.abs(node_matrix[:, 0] - 0.75))
-applied_force_location = beam_length - node_matrix[closest_node_idx][0] 
-print(f'The applied force location is: {applied_force_location}')
 
 print("Starting to solve for multiple loads...\n")
 
 # Create a container to store the max deflection for each time step at a specific applied force
-max_deflection = np.zeros(len(t))
 
-# Loop over different applied forces
-for force_idx, applied_force in enumerate(applied_forces):
-    print(f'Processing force: {applied_force} N')
-    
-    # Get the external force for this load
-    W, _ = gef.getExternalForce(node_matrix, applied_force)
-    
-    # Calculate expected deflection for this load
-    expected_deflection = - applied_force * applied_force_location / ( 9 * 3 ** 0.5 * beam_length * bending_stiffness_matrix[0] ) * (beam_length ** 2 - applied_force_location ** 2) ** 1.5
-    expected_deflections[force_idx] = expected_deflection
-    
-    # Reset initial conditions for this load
-    x_old = np.zeros(ndof)
-    u_old = np.zeros(ndof)
-    for i in range(N):
-        x_old[2 * i] = node_matrix[i][0]
-        x_old[2 * i + 1] = node_matrix[i][1]
-    
 
-    # Run simulation
-    for k in range(len(t) - 1):
-        t_new = t[k+1]
+'''
+Process Planning:
+
+I want to implement a error function which iteratively updates the last node position based on the error between the middle node and the target position
+
+The position of the last node is easy enough to guide, base it on the direction between the middle node and target position
+The angle of the last node is trickier to optimize
+
+
+Then comes the issue that the path planning is done at speed, not just fixed positions
+Creating a stop-motion film will not solve the problem directly unless I factor in the different initial conditions for each time step
+
+I know all the positions and velocities of the middle node, but not the rest of the beam, which makes this much trickier
+Position is easy enough to error check, just look at where the middle node needs to be and where it actually is
+Velocity can be error checked by looking at the previous time step's position and the current position
+
+The best way to start the simulation is to stabilize the solution since the beam will sag slightly to start
+The the last node's position and angle can be placed to the correct starting position for the middle node
+Then the bulk of the simulation can begin running to copy the target path of the middle node
+I can eliminate a target speed for the middle node, not really relevant to the problem
+
+So no speed, settle the beam, move to starting position, then simulate the target path
+
+This still leaves the problem of how to optimize the angle of the last node
+Simplest would be to let it rotate freely, and record the angle at each time step
+
+For the last position in the arc, I expect the beam to stretch out, meaning that the middle node will sit lower than the target position
+In that case the last two nodes should point toward the pivot join to keep the beam in a compressed state
+OR the beam could be bent more to curve the middle node to the target position
+
+Best idea, test the localizing algorithm for the first target position to test was could be useful for the last node angle
+---------------------------------
+
+For each time step, need to iterate on the best last node position and angle to meet the target position of the middle node
+
+'''
+
+print('Processing force: Beam Weight...\n')
+
+# Get the external force for this load
+W = gef.getExternalForce(m)
+
+# Reset initial conditions for this load
+x_old = np.zeros(ndof)
+u_old = np.zeros(ndof)
+for i in range(N):
+    x_old[2 * i] = node_matrix[i][0]
+    x_old[2 * i + 1] = node_matrix[i][1]
+
+
+tx0, ty0 = tnp.targetNodePosition(t[0], beam_length)
+tx1, ty1 = tnp.targetNodePosition(t[1], beam_length)
+dist_btw_targets = np.sqrt((tx1 - tx0) ** 2 + (ty1 - ty0) ** 2)
+allowable_error = dist_btw_targets * 1e-2 # meter 
+max_iterations = 100
+iterations = 0
+
+internode_length = beam_length / (N - 1)
+
+# Create container to store the final node positions and angle for each time step once the target position is reached
+final_node_positions = np.zeros((len(t), 2)) # x and y coordinates
+final_node_positions[0,0] = x_old[-2]
+final_node_positions[0,1] = x_old[-1]
+
+final_node_angles = np.zeros(len(t)) # angle in radians
+
+# Run simulation
+for k in range(len(t) - 1):
+    iterations = 0
+    
+    t_new = t[k+1]
+    
+    target_x, target_y = tnp.targetNodePosition(t_new, beam_length)
+
+    distance_to_target = np.sqrt((noi_x - target_x) ** 2 + (noi_y - target_y) ** 2)
+
+    while distance_to_target > allowable_error and iterations < max_iterations:
         
         # Call integrator
         x_new, u_new = snr.solverNewtonRaphson(t_new, x_old, u_old, free_DOF, W,
@@ -194,86 +238,84 @@ for force_idx, applied_force in enumerate(applied_forces):
                                                bending_stiffness_matrix, bending_index_matrix, l_k_bending,
                                                m, dt)
         
-        # Plot at specific time steps
-        # To plot for ALL forces, change "force_idx == 0" to "True"
-        # To plot only for the FIRST force, keep "force_idx == 0"
-        if applied_force == 2000:
-
-            # Store the max deflection for this time step
-            max_deflection[k+1] = np.min(x_new[free_DOF[1::2]])
-
-            if t_new in [0.25, 0.5, 0.75, 1.0]:
-                expected_max_deflection_location = np.sqrt((beam_length ** 2 - applied_force_location ** 2) / 3)
-                ploot.plot(x_new, stretch_index_matrix, t_new, save_plots=True, output_dir='HW2/plots', 
-                           expected_deflection=expected_deflection, 
-                           expected_max_deflection_location=expected_max_deflection_location,
-                           applied_force=applied_force)
-                       
+        noi_x = x_new[2 * noi_idx]
+        noi_y = x_new[2 * noi_idx + 1]
         
-        # Update x_old and u_old
-        x_old = x_new
-        u_old = u_new
-    
-    # Store the final simulated deflection (minimum y-coordinate)
-    simulated_deflections[force_idx] = np.min(x_old[free_DOF[1::2]])
-    print(f'  Expected deflection: {expected_deflection:.6f} m')
-    print(f'  Simulated deflection: {simulated_deflections[force_idx]:.6f} m\n')
+        target_x_delta = target_x - noi_x
+        target_y_delta = target_y - noi_y
 
-# Create comparison plot
-plt.figure(figsize=(10, 6))
-plt.plot(applied_forces, expected_deflections, 'ro-', label='Expected Deflection', linewidth=2, markersize=8)
-plt.plot(applied_forces, simulated_deflections, 'bs-', label='Simulated Deflection', linewidth=2, markersize=8)
-plt.title('Expected vs Simulated Deflection for Multiple Applied Loads')
-# plt.xscale('log')
-plt.xlabel('Applied Force [N]')
-plt.ylabel('Deflection [m]')
-plt.legend()
-plt.grid(True, alpha=0.3)
-plt.xlim(min(applied_forces) - 200, max(applied_forces) + 200)
+        distance_to_target = np.sqrt((target_x_delta) ** 2 + (target_y_delta) ** 2)
+        # Only update the last two nodes if the distance to the target is greater than the allowable error
+        if distance_to_target > allowable_error:
+            
+            # Determine the new positions for the last two nodes to meet the target position of the middle node
+            new_fixed_DOF = x_old[fixed_DOF] + np.array([0, 0, # The first node position will not change
+                                                         0, 0, # Will not update the second last node in this step
+                                                         0.5*target_x_delta, 0.5*target_y_delta]) # The Last node position will update proportionally to the difference between the middle node and the target position
 
-if not os.path.exists('HW2/plots'):
-    os.makedirs('HW2/plots')
+            # Align the last two nodes to be collinear with the fixed end
+            theta = np.arctan2(new_fixed_DOF[5], new_fixed_DOF[4])
 
-filename = "HW2/plots/plot_expected_vs_simulated.png"
-plt.savefig(filename, dpi=300, bbox_inches='tight')
-print(f'Comparison plot saved to: {filename}')
+            # Update the second last node position
+            new_fixed_DOF[2] = new_fixed_DOF[4] - internode_length * np.cos(theta) 
+            new_fixed_DOF[3] = new_fixed_DOF[5] - internode_length * np.sin(theta)
 
-# Print results table
-print("\nResults Summary:")
-print("Force [N]\tExpected [m]\tSimulated [m]\tError [%]")
-print("-" * 60)
+            # Update the fixed DOFs to the new positions
+            x_old[fixed_DOF] = new_fixed_DOF
 
-# The percentage error is calculated as the absolute difference between the expected and simulated deflections divided by the absolute value of the expected deflection, multiplied by 100.
-percentage_error = abs(expected_deflections - simulated_deflections) / abs(expected_deflections) * 100
 
-for i in range(len(applied_forces)):
-    print(f"{applied_forces[i]:.0f}\t\t{expected_deflections[i]:.6f}\t{simulated_deflections[i]:.6f}\t{percentage_error[i]:.2f}")
+        print(f'Time Step: {t_new}, X, Y, Distance to target: {target_x_delta}, {target_y_delta}, {distance_to_target}')
+        iterations += 1
+    # Plot at specific time steps
 
-# Plot percentage error vs applied force
-coefficients = np.polyfit(applied_forces, percentage_error, 1)
-polynomial = np.poly1d(coefficients)
+    # Update x_old and u_old
+    x_old = x_new
+    u_old = u_new
 
-plt.figure(figsize=(10, 6))
-plt.plot(applied_forces, percentage_error, 'ro-', label='Percentage Error', linewidth=2, markersize=8)
-# Plot the linear fit with the equation of the line in the label
-plt.plot(applied_forces, polynomial(applied_forces), 'b-', label=f'Linear Fit: y ={coefficients[0]:.6f}x + {coefficients[1]:.6f}', linewidth=2)
-plt.title('Percentage Error vs Applied Force')
-plt.xlabel('Applied Force [N]')
-plt.ylabel('Percentage Error [%]')
-plt.legend()
-plt.xlim(min(applied_forces) - 200, max(applied_forces) + 200)
-plt.savefig('HW2/plots/plot_percentage_error.png', dpi=300, bbox_inches='tight')
-print(f'Percentage error plot saved to: HW2/plots/plot_percentage_error.png')
+    if t_new in [200, 400, 600, 800, 1000]:
+        ploot.plot(x_new, stretch_index_matrix, t_new, save_plots=True, output_dir=plot_filepath)
+    final_node_positions[k+1,0] = x_old[-2]
+    final_node_positions[k+1,1] = x_old[-1]
+    final_node_angles[k+1] = theta
 
-# Plot max deflection vs time
-plt.figure(figsize=(10, 6))
-plt.plot(t, max_deflection, 'ro-', label='Max Deflection', linewidth=2, markersize=8)
-plt.title('Max Deflection vs Time')
-plt.xlabel('Time [s]')
-plt.ylabel('Max Deflection [m]')
-plt.legend()
-plt.savefig('HW2/plots/plot_max_deflection.png', dpi=300, bbox_inches='tight')
-print(f'Max deflection plot saved to: HW2/plots/plot_max_deflection.png')
 
-# Create a plot of max deflection location vs applied force
-plt.figure(figsize=(10, 6))
+# Plots the final node positions
+plt.figure()
+plt.plot(final_node_positions[:,0], final_node_positions[:,1], 'bo-')
+plt.title('Final Node Positions')
+plt.xlabel('X-Coordinate')
+plt.ylabel('Y-Coordinate')
+plt.axis('equal')
+# Save the plot
+plt.savefig('HW3/plots/final_node_positions.png', dpi=300, bbox_inches='tight')
+print(f'Plot saved to: HW3/plots/final_node_positions.png')
+
+# PLot the x coordinate of the last node over time
+plt.figure()
+plt.plot(t, final_node_positions[:,0], 'bo-')
+plt.title('X-Coordinate of the Last Node over Time')
+plt.xlabel('Time [Second]')
+plt.ylabel('X-Coordinate')
+# Save the plot
+plt.savefig('HW3/plots/final_node_x_coordinate.png', dpi=300, bbox_inches='tight')
+print(f'Plot saved to: HW3/plots/final_node_x_coordinate.png')
+
+# PLot the y coordinate of the last node over time
+plt.figure()
+plt.plot(t, final_node_positions[:,1], 'bo-')
+plt.title('Y-Coordinate of the Last Node over Time')
+plt.xlabel('Time [Second]')
+plt.ylabel('Y-Coordinate')
+# Save the plot
+plt.savefig('HW3/plots/final_node_y_coordinate.png', dpi=300, bbox_inches='tight')
+print(f'Plot saved to: HW3/plots/final_node_y_coordinate.png')
+
+# Plots the final node angles
+plt.figure()
+plt.plot(final_node_angles, 'bo-')
+plt.title('Final Node Angles')
+plt.xlabel('Time Step')
+plt.ylabel('Angle (radians)')
+# Save the plot
+plt.savefig('HW3/plots/final_node_angles.png', dpi=300, bbox_inches='tight')
+print(f'Plot saved to: HW3/plots/final_node_angles.png')

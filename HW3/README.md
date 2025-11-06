@@ -4,7 +4,7 @@ This directory contains code for simulating the dynamic behavior of a beam using
 
 ## Overview
 
-This homework implements a numerical simulation of a beam subject to external forces. The beam is discretized into nodes connected by stretching and bending springs, allowing for dynamic analysis using implicit time integration methods.
+This homework implements a trajectory-tracking control algorithm for a beam simulation. The beam is discretized into nodes connected by stretching and bending springs, allowing for dynamic analysis using implicit time integration methods. The simulation controls the position of the middle node by iteratively adjusting the last two nodes' positions to guide the middle node along a target circular arc trajectory.
 
 ## Files Description
 
@@ -13,19 +13,21 @@ This homework implements a numerical simulation of a beam subject to external fo
 #### `Homework3.py`
 The main execution script that orchestrates the entire simulation. It:
 - Loads the spring network data (nodes, stretching springs, and bending springs) from text files
-- Initializes the simulation parameters (time step, total time, applied forces)
+- Initializes the simulation parameters (time step, total time)
 - Calculates rest lengths for stretching springs and rest curvatures for bending springs
-- Loops over multiple applied forces and performs time integration using Newton-Raphson method
-- Compares simulated deflections with expected analytical deflections
-- Generates comparison plots showing expected vs simulated deflections, percentage error, and time-dependent max deflection
-- Outputs a results summary table with force, expected deflection, simulated deflection, and percentage error
+- Defines the target trajectory for the middle node using a circular arc path
+- Performs iterative control at each time step to adjust the last two nodes' positions, guiding the middle node to follow the target trajectory
+- Uses implicit time integration with Newton-Raphson method for stable simulation
+- Generates visualization plots at specific time steps and saves trajectory data
 
 **Key features:**
-- Supports multiple applied force magnitudes (default: 500N to 20000N in 500N increments)
-- Applies force at x = 0.75 meters along the beam
-- Uses fixed boundary conditions (first node fixed in x and y, last node fixed in y)
-- Generates plots at specific time steps (0.25s, 0.5s, 0.75s, 1.0s) for force = 2000N
-- Calculates and visualizes percentage error between expected and simulated results
+- Trajectory tracking: Controls the middle node to follow a circular arc path defined by `targetNodePosition.py`
+- Iterative control: At each time step, iteratively adjusts the last two nodes' positions until the middle node reaches the target position within tolerance
+- Applied force: Only gravity (beam weight) is applied to all nodes
+- Boundary conditions: First node fixed in x and y; last two nodes are adjustable but constrained to maintain collinearity
+- Number of nodes: Must be odd (to ensure a unique middle node)
+- Plots at time steps: 200s, 400s, 600s, 800s, 1000s
+- Outputs: Final node positions, angles, and coordinate trajectories over time
 
 ### Solver Modules
 
@@ -39,14 +41,13 @@ Implements the implicit Newton-Raphson solver for time integration. This solver:
 
 **Function:** `solverNewtonRaphson(t_new, x_old, u_old, free_DOF, W, stretch_stiffness_matrix, stretch_index_matrix, l_k_stretch, bending_stiffness_matrix, bending_index_matrix, l_k_bending, m, dt)`
 
-#### `solverExplicit.py`
-Implements an explicit time integration solver (alternative to implicit method). This solver:
-- Uses explicit time integration (forward Euler-like method)
-- Calculates spring forces and external forces
-- Updates positions and velocities explicitly
-- Generally faster per time step but may require smaller time steps for stability
+#### `targetNodePosition.py`
+Defines the target trajectory for the middle node. This module:
+- Calculates the desired position of the middle node at a given time
+- Uses a circular arc trajectory parameterized by time
+- Returns target x and y coordinates based on the beam length and time
 
-**Function:** `solverExplicit(x_old, u_old, stiffness_matrix, index_matrix, m, dt, l_k)`
+**Function:** `targetNodePosition(t_new, length)` - Returns `(target_x, target_y)`
 
 ### Force and Jacobian Modules
 
@@ -62,11 +63,11 @@ Computes the force vector and Jacobian matrix for the implicit time integration 
 
 #### `getExternalForce.py`
 Calculates and applies external forces to the system. This module:
-- Finds the node closest to a specified x-coordinate (default: 0.75 meters)
-- Applies a vertical force (negative y-direction) to that node
-- Returns the force vector and the index of the node where force is applied
+- Applies gravitational force (weight) to all nodes in the system
+- Calculates force based on node masses and gravitational acceleration (9.81 m/s²)
+- Returns a force vector with forces in the negative y-direction (downward)
 
-**Function:** `getExternalForce(node_matrix, magnitude)`
+**Function:** `getExternalForce(m)` - Returns force vector `W` where `W[2*i+1] = -m[i] * 9.81` for each node `i`
 
 ### Initialization Module
 
@@ -78,12 +79,18 @@ Initializes and creates the spring network data files. This script:
 - Distributes mass evenly across nodes
 - Saves data to text files in the `springNetworkData/` directory
 
-**Parameters:**
-- `N`: Number of nodes (default: 50)
+**Parameters (as defined in the script):**
+- `N`: Number of nodes (default: 19, must be odd)
 - `L`: Beam length in meters (default: 1.0 m)
-- `EA`: Stretching stiffness (N/m)
-- `EI`: Bending stiffness (N·m²)
-- `m`: Total beam mass (kg)
+- `E`: Elastic modulus (70e9 Pa for aluminum)
+- `rho`: Density (2700 kg/m³ for aluminum)
+- `r_outer`: Outer radius (0.013 m)
+- `r_inner`: Inner radius (0.011 m)
+- `EA`: Stretching stiffness (calculated from E and cross-sectional area)
+- `EI`: Bending stiffness (calculated from E and moment of inertia)
+- `m`: Total beam mass (calculated from density and volume)
+
+**Note:** The script writes output files to `HW3/springNetworkData/` directory.
 
 **Output files:**
 - `nodes.txt`: Node coordinates and masses
@@ -143,13 +150,16 @@ Directory containing the input data files that define the spring network:
 #### `plots/`
 Directory containing generated visualization plots:
 
-- **`plot_expected_vs_simulated.png`**: Comparison plot showing expected vs simulated deflections across different applied forces
-- **`plot_percentage_error.png`**: Plot showing percentage error between expected and simulated deflections vs applied force
-- **`plot_max_deflection.png`**: Plot showing maximum deflection vs time for a specific applied force (2000N)
-- **`plot_t_0.25s_F2000N.png`**: Beam configuration snapshot at t=0.25s with 2000N applied force
-- **`plot_t_0.50s_F2000N.png`**: Beam configuration snapshot at t=0.50s with 2000N applied force
-- **`plot_t_0.75s_F2000N.png`**: Beam configuration snapshot at t=0.75s with 2000N applied force
-- **`plot_t_1.00s_F2000N.png`**: Beam configuration snapshot at t=1.00s with 2000N applied force
+- **`plot_t_0.00s.png`**: Initial beam configuration at t=0s
+- **`plot_t_200.00s.png`**: Beam configuration snapshot at t=200s
+- **`plot_t_400.00s.png`**: Beam configuration snapshot at t=400s
+- **`plot_t_600.00s.png`**: Beam configuration snapshot at t=600s
+- **`plot_t_800.00s.png`**: Beam configuration snapshot at t=800s
+- **`plot_t_1000.00s.png`**: Beam configuration snapshot at t=1000s
+- **`final_node_positions.png`**: Trajectory of the last node's position (x-y plot)
+- **`final_node_x_coordinate.png`**: X-coordinate of the last node over time
+- **`final_node_y_coordinate.png`**: Y-coordinate of the last node over time
+- **`final_node_angles.png`**: Angle of the last node over time (in radians)
 
 ### Documentation Files
 
@@ -182,18 +192,22 @@ The code requires the following Python packages:
 
 ## Simulation Parameters
 
-- **Time step**: `dt = 1e-2` seconds
-- **Total simulation time**: `maxTime = 1` second
-- **Applied forces**: Range from 500N to 20000N (configurable in `Homework3.py`)
-- **Force application location**: x = 0.75 meters
+- **Time step**: `dt = 1` second
+- **Total simulation time**: `maxTime = 1000` seconds
+- **Applied forces**: Gravity only (beam weight distributed across all nodes)
+- **Target trajectory**: Circular arc path for middle node (defined by `targetNodePosition.py`)
+- **Control tolerance**: `allowable_error = dist_btw_targets * 1e-2` (dynamically adjusted based on target spacing)
+- **Maximum iterations**: 100 iterations per time step to reach target position
 - **Boundary conditions**: 
   - First node: fixed in x and y directions
-  - Last node: fixed in y direction
+  - Last two nodes: Position adjustable but constrained to maintain collinearity with fixed end
+  - All other nodes: Free to move
 
 ## Notes
 
-- The code contains some hardcoded file paths referencing `HW2/` directories - these may need to be updated to `HW3/` if running in isolation
 - The simulation uses an implicit Newton-Raphson solver for stable time integration
 - Rest lengths for stretching springs and rest curvatures for bending springs are calculated from the initial configuration
-- Expected deflections are calculated using analytical beam theory formulas
+- The control algorithm iteratively adjusts the last two nodes' positions based on the error between the middle node's current position and target position
+- The target trajectory follows a circular arc: `target_x = length/2 * cos(π/2 * t/1000)`, `target_y = -length/2 * sin(π/2 * t/1000)`
+- The number of nodes must be odd to ensure a unique middle node exists
 
