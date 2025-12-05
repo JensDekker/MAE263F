@@ -18,7 +18,6 @@ start_time = time.time()
 nodes_filepath = 'HW5/springNetworkData/nodes.txt'
 stretch_springs_filepath = 'HW5/springNetworkData/stretch_springs.txt'
 bending_springs_filepath = "HW5/springNetworkData/bending_springs.txt"
-twisting_springs_filepath = "HW5/springNetworkData/twisting_springs.txt"
 parameters_filepath = 'HW5/springNetworkData/parameters.txt'
 
 

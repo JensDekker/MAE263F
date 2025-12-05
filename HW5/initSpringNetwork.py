@@ -185,6 +185,9 @@ EA = E * A
 # Bending stiffness
 EI = E * I
 
+# Distributed load
+q = rho * A * -9.81 # N/m
+
 # Total Mass
 total_mass = rho * length * width * thickness
 
@@ -209,5 +212,6 @@ with open(os.path.join(output_dir, 'parameters.txt'), 'w') as f:
     f.write(f"EI: {EI}\n")
     f.write(f"total_mass: {total_mass}\n")
     f.write(f"N: {N}\n")
+    f.write(f"q: {q}\n")
 
 print(f'Parameters saved to: {os.path.join(output_dir, "parameters.txt")}')
